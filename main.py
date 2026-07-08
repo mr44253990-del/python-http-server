@@ -2,14 +2,19 @@ import json, sqlite3, time, urllib.request, urllib.parse, os
 
 def init():
     conn = sqlite3.connect('app.db', check_same_thread=False)
-    conn.execute('CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0)')
+    conn.execute('CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0, name TEXT)')
     conn.execute('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, telegram_id INTEGER, amount REAL, trx_id TEXT UNIQUE, status TEXT)')
     conn.commit()
     conn.close()
 
+def send_msg(token, chat_id, text, keyboard=None):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    params = {'chat_id': chat_id, 'text': text}
+    if keyboard: params['reply_markup'] = json.dumps({"inline_keyboard": keyboard})
+    urllib.request.urlopen(f"{url}?{urllib.parse.urlencode(params)}")
+
 def run_bot():
     token = "8262466024:AAG4yoZE5ynR0spQ39iWrAlcOq3fX7trtj4"
-    ADMIN_ID = 5893363292
     offset = 0
     while True:
         try:
@@ -18,35 +23,15 @@ def run_bot():
                 data = json.loads(res.read().decode())
                 for u in data.get('result', []):
                     offset = u['update_id']
-                    chat_id = u['message']['chat']['id']
-                    text = u['message'].get('text', '')
-                    
-                    # Logic for users: /deposit amount trx_id
-                    if text.startswith('/deposit'):
-                        parts = text.split()
-                        if len(parts) == 3:
-                            try:
-                                amt, tid = float(parts[1]), parts[2]
-                                conn = sqlite3.connect('app.db')
-                                conn.execute("INSERT INTO transactions (telegram_id, amount, trx_id, status) VALUES (?, ?, ?, ?)", (chat_id, amt, tid, 'Pending'))
-                                conn.commit()
-                                conn.close()
-                                reply = "Deposit request submitted! Wait for admin approval."
-                            except: reply = "Error: TRX ID must be unique or data invalid."
-                        else: reply = "Usage: /deposit [amount] [trx_id]"
-                    # Admin logic
-                    elif chat_id == ADMIN_ID:
-                        if text == '/admin': reply = "Admin Menu: /pending, /stats"
-                        elif text == '/pending':
-                            conn = sqlite3.connect('app.db')
-                            rows = conn.execute("SELECT id, telegram_id, amount, trx_id FROM transactions WHERE status='Pending'").fetchall()
-                            reply = "Pending Deposits:\n" + str(rows) if rows else "No pending deposits."
-                            conn.close()
-                        else: reply = "Admin mode active."
-                    else: reply = "Welcome! Use /deposit [amount] [trxid] to add funds."
-                    
-                    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-                    urllib.request.urlopen(f"{send_url}?chat_id={chat_id}&text={urllib.parse.quote(reply)}")
+                    if 'callback_query' in u:
+                        cb = u['callback_query']
+                        chat_id = cb['message']['chat']['id']
+                        data = cb['data']
+                        if data == 'balance': send_msg(token, chat_id, "আপনার ব্যালেন্স: 0.00 BDT")
+                        elif data == 'deposit_info': send_msg(token, chat_id, "বিকাশ: 01755070708. টাকা পাঠিয়ে TRX ID জানান /deposit [amount] [trx]")
+                    elif 'message' in u and u['message'].get('text') == '/start':
+                        menu = [[{"text":"💰 ব্যালেন্স", "callback_data":"balance"}, {"text":"📥 ডিপোজিট", "callback_data":"deposit_info"}]]
+                        send_msg(token, u['message']['chat']['id'], "স্বাগতম রাকিবুল! মেইন মেনু:", menu)
         except: time.sleep(10)
 
 if __name__ == "__main__":
