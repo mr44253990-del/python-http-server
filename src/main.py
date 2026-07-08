@@ -5,7 +5,7 @@ from utils.transactions import add_deposit_request
 from admin.panel import get_pending_deposits, approve_deposit
 
 init_db()
-ADMIN_ID = 112233 # আপনার টেলিগ্রাম আইডি এখানে দিন যাতে শুধু আপনিই অ্যাক্সেস পান
+ADMIN_ID = 5893363292 # আপনার টেলিগ্রাম আইডি এখানে দিন যাতে শুধু আপনিই অ্যাক্সেস পান
 
 def bot_loop():
     last_update_id = 0
