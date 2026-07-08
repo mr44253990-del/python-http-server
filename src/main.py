@@ -1,6 +1,7 @@
 import threading, time, json, urllib.request
-from utils.db import init_db, get_db
+from utils.db import init_db
 from utils.telegram import send_message
+from utils.transactions import add_deposit_request
 
 init_db()
 
@@ -13,16 +14,31 @@ def bot_loop():
                 data = json.loads(res.read().decode())
                 for u in data.get('result', []):
                     last_update_id = u['update_id']
-                    # Callback logic
+                    
                     if 'callback_query' in u:
                         chat_id = u['callback_query']['message']['chat']['id']
-                        if u['callback_query']['data'] == 'balance':
+                        cb_data = u['callback_query']['data']
+                        if cb_data == 'balance':
                             send_message(chat_id, "আপনার ব্যালেন্স: 0.00 BDT")
-                    # Command logic
-                    elif 'message' in u and u['message'].get('text') == '/start':
-                        send_message(u['message']['chat']['id'], "স্বাগতম! মেনু সিলেক্ট করুন:", [[{"text":"💰 ব্যালেন্স", "callback_data":"balance"}]])
+                        elif cb_data == 'deposit':
+                            send_message(chat_id, "বিকাশ করুন: 01755070708\nএরপর TRX ID পাঠান এভাবে: /deposit [amount] [trxid]")
+                    
+                    elif 'message' in u and 'text' in u['message']:
+                        text = u['message']['text']
+                        chat_id = u['message']['chat']['id']
+                        if text == '/start':
+                            send_message(chat_id, "স্বাগতম! মেনু সিলেক্ট করুন:", [[{"text":"💰 ব্যালেন্স", "callback_data":"balance"}, {"text":"➕ Deposit", "callback_data":"deposit"}]])
+                        elif text.startswith('/deposit'):
+                            parts = text.split()
+                            if len(parts) == 3:
+                                _, amount, trx = parts
+                                if add_deposit_request(chat_id, amount, trx):
+                                    send_message(chat_id, f"আপনার ডিপোজিট রিকোয়েস্ট জমা হয়েছে! TRX: {trx}. এডমিন চেক করছেন।")
+                                else:
+                                    send_message(chat_id, "এরর: TRX ID টি সম্ভবত আগেই ব্যবহৃত হয়েছে।")
             time.sleep(2)
-        except: time.sleep(5)
+        except Exception as e:
+            time.sleep(5)
 
 if __name__ == "__main__":
     threading.Thread(target=bot_loop, daemon=True).start()
