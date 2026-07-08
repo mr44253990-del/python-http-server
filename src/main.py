@@ -2,8 +2,10 @@ import threading, time, json, urllib.request
 from utils.db import init_db
 from utils.telegram import send_message
 from utils.transactions import add_deposit_request
+from admin.panel import get_pending_deposits, approve_deposit
 
 init_db()
+ADMIN_ID = 112233 # আপনার টেলিগ্রাম আইডি এখানে দিন যাতে শুধু আপনিই অ্যাক্সেস পান
 
 def bot_loop():
     last_update_id = 0
@@ -14,31 +16,37 @@ def bot_loop():
                 data = json.loads(res.read().decode())
                 for u in data.get('result', []):
                     last_update_id = u['update_id']
-                    
-                    if 'callback_query' in u:
-                        chat_id = u['callback_query']['message']['chat']['id']
-                        cb_data = u['callback_query']['data']
-                        if cb_data == 'balance':
-                            send_message(chat_id, "আপনার ব্যালেন্স: 0.00 BDT")
-                        elif cb_data == 'deposit':
-                            send_message(chat_id, "বিকাশ করুন: 01755070708\nএরপর TRX ID পাঠান এভাবে: /deposit [amount] [trxid]")
-                    
-                    elif 'message' in u and 'text' in u['message']:
+                    if 'message' in u and 'text' in u['message']:
                         text = u['message']['text']
                         chat_id = u['message']['chat']['id']
-                        if text == '/start':
-                            send_message(chat_id, "স্বাগতম! মেনু সিলেক্ট করুন:", [[{"text":"💰 ব্যালেন্স", "callback_data":"balance"}, {"text":"➕ Deposit", "callback_data":"deposit"}]])
+                        
+                        # Admin commands
+                        if text == '/admin' and chat_id == ADMIN_ID:
+                            pendings = get_pending_deposits()
+                            if not pendings: send_message(chat_id, "কোনো পেন্ডিং রিকোয়েস্ট নেই।")
+                            else:
+                                for p in pendings:
+                                    msg = f"ID:{p[0]} | User:{p[1]} | Amount:{p[2]} | TRX:{p[3]}"
+                                    send_message(chat_id, msg, [[{"text":"✅ Approve", "callback_data":f"app_{p[0]}"}]])
+                        
+                        # User commands
                         elif text.startswith('/deposit'):
                             parts = text.split()
                             if len(parts) == 3:
-                                _, amount, trx = parts
-                                if add_deposit_request(chat_id, amount, trx):
-                                    send_message(chat_id, f"আপনার ডিপোজিট রিকোয়েস্ট জমা হয়েছে! TRX: {trx}. এডমিন চেক করছেন।")
+                                if add_deposit_request(chat_id, parts[1], parts[2]):
+                                    send_message(chat_id, "রিকোয়েস্ট সফল হয়েছে!")
                                 else:
-                                    send_message(chat_id, "এরর: TRX ID টি সম্ভবত আগেই ব্যবহৃত হয়েছে।")
+                                    send_message(chat_id, "ত্রুটি: TRX ID ইতিমধ্যে ব্যবহৃত!")
+                    
+                    elif 'callback_query' in u:
+                        chat_id = u['callback_query']['message']['chat']['id']
+                        cb = u['callback_query']['data']
+                        if cb.startswith('app_') and chat_id == ADMIN_ID:
+                            tx_id = cb.split('_')[1]
+                            approve_deposit(tx_id)
+                            send_message(chat_id, f"ট্রানজ্যাকশন {tx_id} অনুমোদিত!")
             time.sleep(2)
-        except Exception as e:
-            time.sleep(5)
+        except Exception: time.sleep(5)
 
 if __name__ == "__main__":
     threading.Thread(target=bot_loop, daemon=True).start()
